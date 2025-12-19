@@ -1,0 +1,113 @@
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+
+pool: InfraPool
+
+variables:
+  Working_Dir: '$(System.DefaultWorkingDirectory)/Enviornment/prod'
+  Serv_Connection: 'MYserviceConnection'
+
+stages:
+- stage: Build
+  displayName: Build
+  jobs:
+  - job: Scanningjob
+    displayName: TerraformScan
+    steps:
+    - task: tfsec@1
+      displayName: TFSEC_Scan
+      inputs:
+        version: 'v1.26.0'
+        dir: '$(Working_Dir)'
+
+  - job: TerraformINITPLANVALIDATEFMT
+    displayName: Terraform_INIT_PLAN_VALIDATE_FMT
+    steps:
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTask@5
+      displayName: Terraform_Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(Working_Dir)'
+        backendServiceArm: '$(Serv_Connection)'
+        backendAzureRmStorageAccountName: 'tfstate2028'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'prod.terraform.tfstate'
+
+    - task: TerraformTask@5
+      displayName: Terraform_Validate
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(Working_Dir)'
+
+    - task: TerraformTask@5
+      displayName: Terraform_FMT
+      inputs:
+        provider: 'azurerm'
+        command: 'custom'
+        workingDirectory: '$(Working_Dir)'
+        outputTo: 'console'
+        customCommand: 'fmt'
+        environmentServiceNameAzureRM: '$(Serv_Connection)'
+
+    - task: TerraformTask@5
+      displayName: Terraform_Plan
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(Working_Dir)'
+        environmentServiceNameAzureRM: '$(Serv_Connection)'
+
+- stage: Manual_Validation
+  dependsOn: Build
+  displayName: Manual_Validation
+  jobs:
+  - job: Manual_Validation
+    displayName: Manual_Validation
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: 'nitinnitesh18@gmail.com'
+        approvers: 'nitinnitesh18@gmail.com'
+        instructions: 'Please approve accordingly'
+
+- stage: Deploy
+  dependsOn: Manual_Validation
+  displayName: Deploy
+  jobs:
+  - job: Terraform_Apply
+    displayName: Terraform_Apply
+    steps:
+
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTask@5
+      displayName: TerraformInitforApply
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(Working_Dir)'
+        backendServiceArm: '$(Serv_Connection)'
+        backendAzureRmStorageAccountName: 'tfstate2028'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'prod.terraform.tfstate'
+
+    - task: TerraformTask@5
+      displayName: Terraform_Apply
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(Working_Dir)'
+        environmentServiceNameAzureRM: '$(Serv_Connection)'
+
